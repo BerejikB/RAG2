@@ -1,0 +1,14 @@
+[project]
+name = "goose-rag"
+version = "0.1.0"
+description = "Lightweight BM25-based RAG for Goose/KMGR to prevent context overflow"
+authors = [{name="Goose"}]
+requires-python = ">=3.9"
+readme = "README.md"
+
+[project.scripts]
+goose-rag = "rag.cli:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

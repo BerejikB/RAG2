@@ -1,0 +1,107 @@
+Goose RAG – Agent Instructions (Living Document)
+Last updated: 2025-08-14
+Owner: Goose Agents working on RAG
+
+Purpose
+- Make RAG the primary way Goose reads code/docs to prevent context overflow.
+- Agents must NOT read large files directly; always retrieve bounded, relevant snippets via RAG.
+
+Current State
+- Module path: K:\GOOSE\RAG\rag
+- Key files: index.py (BM25 index + retrieval), compose.py (context assembly), cli.py (goose-rag CLI), __init__.py
+- Default index location: KMGR/scratch/rag_index.pkl (works without KMGR; path chosen for future compatibility)
+- Retrieval: BM25 lexical, alnum/_ tokenization, chunking = 200 lines w/ 40 overlap, 50MB per-file cap, common text/code extensions only.
+- New: compose_ultra_compact(query, k=1, snippet_max_chars=500, max_total_chars=1200) for ultra-tight prompts.
+
+KMGR-integrated (single-file) option – RAG-lite
+- To minimize artifacts and ease deployment, a self-contained RAG is available:
+  Path: K:\GOOSE\KMGR\rag\raglite.py
+- Use this when you cannot or do not want to install the goose-rag package.
+
+KMGR RAG-lite – CLI (WSL)
+- Build index (no install required):
+  wsl bash -lc "python3 /mnt/k/GOOSE/KMGR/rag/raglite.py build /mnt/k/GOOSE"
+- Query:
+  wsl bash -lc "python3 /mnt/k/GOOSE/KMGR/rag/raglite.py query --k 3 --max-chars 1200 'how does RAG prevent context overflow'"
+- Compose ultra-compact context (preferred for agents):
+  wsl bash -lc "python3 /mnt/k/GOOSE/KMGR/rag/raglite.py compose --k 1 --snippet-max-chars 500 --max-total-chars 1200 'KMGR bootstrap protocol'"
+
+Notes
+- Both goose-rag (package) and raglite (single-file) share the same retrieval logic and defaults.
+- Prefer raglite for lowest-friction integration inside KMGR; prefer goose-rag when you want a reusable package/CLI.
+
+
+Absolute Rules (to avoid overflows)
+1) Do NOT read files in entirety in prompts. Use RAG only.
+2) For LLM context, prefer ultra-compact mode (k=1, <=500 chars) unless the task truly needs more.
+3) Always include citations: path:start-end and keep total context under a strict character budget.
+4) Never paste more than ~2000 chars of raw file content in any single message.
+
+How to Use – CLI
+(WSL first; PowerShell only if WSL fails)
+- Build index (once per repo or after big changes):
+  wsl bash -lc "cd /mnt/k/GOOSE && goose-rag build ."
+  - Options: --include-exts .py .md .txt etc.; --ignore-dirs; --chunk-lines; --chunk-overlap
+- Query for relevant snippets:
+  wsl bash -lc "cd /mnt/k/GOOSE && goose-rag query --k 3 --max-chars 1200 'how does RAG prevent context overflow'"
+  - Use --jsonl for programmatic consumption.
+
+How to Use – Library (Python)
+- Compose a context string within a hard cap and pass it to the LLM prompt.
+
+Example (ultra-compact):
+"""
+from rag import build_index, compose_ultra_compact
+
+# Build once (or when files change significantly)
+build_index(["K:/GOOSE"], index_path="KMGR/scratch/rag_index.pkl")
+
+# Retrieve a tight context
+doc, hits = compose_ultra_compact(
+    "KMGR bootstrap protocol",
+    index_path="KMGR/scratch/rag_index.pkl",
+    k=1,
+    snippet_max_chars=500,
+    max_total_chars=1200,
+)
+print(doc)  # include in your model prompt
+"""
+
+Recommended Prompt Pattern for Agents
+- System/context block: the composed doc from compose_ultra_compact/compose_context.
+- User task: Your explicit question.
+- Require model to reference citations [i] and to avoid reading files directly.
+
+Example prompt skeleton:
+"""
+Context:
+<BEGIN>
+{composed_context_here}
+<END>
+
+Task: Answer the question using ONLY the context above. Cite using [index] references. If missing info, state what additional query is needed.
+"""
+
+Operational Conventions
+- Index path: KMGR/scratch/rag_index.pkl
+- If index missing or stale: run goose-rag build .
+- Retrieval defaults: k=5, but prefer ultra-compact (k=1) for agents unless needed.
+- Include path+line span in citations. Keep outputs concise.
+- If an overflow risk is detected, reduce k and/or snippet_max_chars.
+
+Troubleshooting
+- No results: broaden query terms; increase k; verify include_exts covers file types; rebuild index.
+- Large snippets: lower --max-chars (CLI) or snippet_max_chars (library); use ultra-compact.
+- Performance: restrict paths to specific subdirectories when building the index.
+
+Roadmap (RAG focus; KMGR later)
+- [Planned] CLI subcommand to compose ultra-compact blocks directly (goose-rag compose ...)
+- [Planned] Embed citations formatting options
+- [Planned] Optional embedding backend (later)
+
+Changelog
+- 2025-08-14: Added compose_ultra_compact helper and exported from rag.__init__. RAG designated as primary file interaction path. Document created.
+
+Maintenance
+- Keep this document in sync with significant code/config changes.
+- Any agent making meaningful updates must append a dated changelog entry and adjust guidance above.
